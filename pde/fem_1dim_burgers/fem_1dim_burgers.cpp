@@ -2,7 +2,6 @@
 #include <cmath>    // for std::pow, std::sin
 #include <fstream>  // for std::ofstream
 #include <iostream> // for std::endl
-#include <optional> // for std::optional
 #include <sstream>  // for std::string, std::stringstream
 #include <vector>   // fos std::vector
 #include <boost/assert.hpp>                   // for BOOST_ASSERT
@@ -80,12 +79,12 @@ namespace fem{
 			// operator=()でもcopy禁止
         	FEM & operator=(FEM const &dummy) = delete;
 
+			// output for each TLOOP
+			bool result_output(int i);
+
 			// boundary condition
         	void boundary();
 			void boundary2();
-
-			// Picard iteration
-			std::optioanl<myvec> Picard();
 
 			// TDMA method
 	    	void tdma();
@@ -93,14 +92,11 @@ namespace fem{
 			// make stiffness matrix
 	    	void mat();
 
-			// output for each TLOOP
-			bool result_output(int i);
-
             // get private x_
             myvec &getx();
 
             // get private xx_
-            myvec const &getxx() const;
+            myvec &getxx();
     };
 }
 
@@ -125,17 +121,21 @@ int main(){
             fem_obj.boundary();
             fem_obj.boundary2();
 		    fem_obj.tdma();
-			
-			if (auto const res = fem_obj.Picard(); res){
-				auto const x = *res;
-			}
-			else{  
-        		// resに中身が入っていなかったら、収束していないのでerror message
-        		std::cerr << "Error! Gauss_Seidel method failed!" << std::endl;
 
-       			return -1; 
-    		}
-        }
+        	auto max = 0.0;
+
+        	for (auto k = 0; k < fem::FEM::NODE; k++){
+            	if (max < std::fabs(fem_obj.getx()[k] < fem_obj.getxx()[k])){
+					max = std::fabs(fem_obj.getx()[k] - fem_obj.getxx()[k]);
+				}
+
+				fem_obj.getx()[k] = fem_obj.getxx()[k];				
+        	}
+
+			if (max < fem::MYEPS){
+				break;
+			}
+    	}
 
 		if (!(i % 100)){
 			fem_obj.result_output(i);
@@ -150,24 +150,6 @@ int main(){
 }
 
 namespace fem{
-	std::optional<myvec> FEM::Picard(){
-        auto max = 0.0;
-
-        for (auto k = 0; k < fem::FEM::NODE; k++){
-            if (max < std::fabs(x_[k] < xx_[k])){
-				max = std::fabs(x_[k] - xx_[k]);
-			}
-
-			x_[k] = xx_[k];				
-        }
-
-		if (max < fem::MYEPS){
-			return std::make_optional(std::move(x_));
-		}
-
-		return std::nullopt;
-	}
-
 	bool FEM::result_output(int i){
 		std::stringstream ss;
 		std::string name;
@@ -193,7 +175,7 @@ namespace fem{
         return x_;
     }
 
-    myvec const &FEM::getxx() const{
+    myvec &FEM::getxx(){
         return xx_;
     }
 
