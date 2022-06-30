@@ -1,16 +1,17 @@
 // 1-dim steady-state advection-diffusion equation by fem
 
+// 1-dim steady-state advection-diffusion equation by fem
+
 #include <fstream>  // for std::ofstream
 #include <iostream> // for std::endl
 #include <vector>   // fos std::vector
 #include <boost/assert.hpp> // for BOOST_ASSERT
 
 namespace fem{
+	using myvec = std::vector<double>;
+
     class FEM final{
-		public:
-			using myvector = std::vector<double>;
-	
-    	private:
+		private:
         	enum class boundary_condi_type{
             	DIRICLET = 0,
             	LEFT_NEUMANN = 1,
@@ -26,31 +27,25 @@ namespace fem{
 			// boundary conditions
         	static auto constexpr D0 = 0.0; // left Dirichlet
     		static auto constexpr D1 = 1.0; // right Direchlet
-			static auto constexpr N0 = 0.0; // left Neumann
-	    	static auto constexpr N1 = 2.0; // right Neumann
+			static auto constexpr N0 = 0.5; // left Neumann
+	    	static auto constexpr N1 = -1.0; // right Neumann
 
 	    	static auto constexpr ELEMENT = 100;
         	static auto constexpr LENGTH = 1.0;
 	    	static auto constexpr NODE = ELEMENT + 1;
-    
-    	public:
         	static auto constexpr DX = LENGTH / ELEMENT;
 	
     	private:
-        	myvector bound_;
-        	myvector diag_;
-			myvector f_;
-	    	myvector left_;
-	    	myvector right_;
+        	myvec bound_;
+        	myvec diag_;
+			myvec f_;
+	    	myvec left_;
+	    	myvec right_;
 
     	public:
         	FEM()
-            	: bound_(NODE, 0.0), diag_(NODE, 0.0), f_(NODE), left_(NODE, 0.0), right_(NODE, 0.0)
-        	{
-				for (auto && elem : f_){
-					elem = 0.0; // (right hand side) = 0
-				}
-			}
+            	: bound_(NODE, 0.0), diag_(NODE, 0.0), f_(NODE, 0.0), left_(NODE, 0.0), right_(NODE, 0.0)
+        	{}
 
         	~FEM() = default;
 
@@ -67,10 +62,10 @@ namespace fem{
 	    	void mat();
 
 			// TDMA method
-	    	myvector tdma() const;
+	    	myvec tdma() const;
 
 			// result output file
-			bool output_file(myvector const &x);
+			bool output_file(myvec const &x);
     };
 }
 
@@ -144,9 +139,9 @@ namespace fem{
         }
 	}
 
-	FEM::myvector FEM::tdma() const{
-		myvector p(NODE, 0.0);
-		myvector q(NODE, 0.0);
+	myvec FEM::tdma() const{
+		myvec p(NODE, 0.0);
+		myvec q(NODE, 0.0);
 
 		p[0] = -right_[0] / diag_[0];
 		q[0] = bound_[0] / diag_[0];
@@ -156,7 +151,7 @@ namespace fem{
 		    q[i] = (bound_[i] - left_[i] * q[i - 1]) / (diag_[i] + left_[i] * p[i - 1]);
 	    }
 
-		myvector x(NODE, 0.0);
+		myvec x(NODE, 0.0);
 		x[NODE - 1] = q[NODE - 1];
 
 		for (auto j = NODE - 2; j >= 0; j--){
@@ -166,7 +161,7 @@ namespace fem{
         return x;
  	}
 
-	bool FEM::output_file(myvector const &x){
+	bool FEM::output_file(myvec const &x){
 		std::ofstream ofs("data_advec_diff.txt");
     	if (!ofs) {
         	return false;
