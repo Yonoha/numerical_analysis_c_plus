@@ -19,8 +19,8 @@ namespace fem{
 			// boundary conditions
         	static auto constexpr D0 = 0.0; // left Dirichlet
     		static auto constexpr D1 = 1.0; // right Direchlet
-			static auto constexpr N0 = 0.0; // left Neumann
-	    	static auto constexpr N1 = 2.0; // right Neumann
+			static auto constexpr N0 = 1.0; // left Neumann
+	    	static auto constexpr N1 = 0.5; // right Neumann
 
 	    	static auto constexpr ELEMENT = 100;
         	static auto constexpr LENGTH = 1.0;
