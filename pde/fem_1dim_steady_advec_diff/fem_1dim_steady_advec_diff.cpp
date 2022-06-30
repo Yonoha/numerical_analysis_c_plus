@@ -99,7 +99,7 @@ namespace fem{
         	    diag_[NODE - 1] = 1.0;
 				left_[NODE - 1] = 0.0;
 				// boundary conditions
-			    bound_[0] -= N0 * DX; // left Neumann
+			    bound_[0] -= N0 * DIFF; // left Neumann
 				bound_[NODE - 1] = D1;
                 break;
 			
@@ -108,7 +108,7 @@ namespace fem{
         	    right_[0] = 0.0;
 				// boundary conditions
         	    bound_[0] = D0;
-			    bound_[NODE - 1] -= N1 * DX; // right Neumann
+			    bound_[NODE - 1] += N1 * DIFF; // right Neumann
                 break;
             
             default:
