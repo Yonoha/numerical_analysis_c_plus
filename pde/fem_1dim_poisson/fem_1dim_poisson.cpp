@@ -102,7 +102,7 @@ namespace fem{
         	    right_[0] = 0.0;
 				// boundary conditions
         	    bound_[0] = D0;
-			    bound_[NODE - 1] -= N1; // right Neumann
+			    bound_[NODE - 1] += N1; // right Neumann
                 break;
             
             default:
