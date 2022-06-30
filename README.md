@@ -7,6 +7,6 @@ Qiitaに投稿した記事「C++で数値計算」シリーズの全体コード
 [C++で数値計算 偏微分方程式](https://qiita.com/Yonono_01/items/ff22610d80f20bfe1b99) <br>
 [C++で数値計算 連立方程式](https://qiita.com/Yonono_01/items/636d2a1a3a5d79c33769) <br>
 
-Issuesにgnuplotで描写したグラフの一覧があります. <br>
+Issuesのimagesにgnuplotで描写したグラフの一覧があります. <br>
 
 数値計算の数学的な証明を記したpdfを執筆中です. 
