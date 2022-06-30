@@ -1,7 +1,5 @@
 // 1-dim steady-state advection-diffusion equation by fem
 
-// 1-dim steady-state advection-diffusion equation by fem
-
 #include <fstream>  // for std::ofstream
 #include <iostream> // for std::endl
 #include <vector>   // fos std::vector
