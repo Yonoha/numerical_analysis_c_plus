@@ -1,5 +1,3 @@
-// 1-dim poisson equation (f = 1) by fem
-
 #include <fstream>  // for std::ofstream
 #include <iostream> // for std::endl
 #include <vector>   // fos std::vector
@@ -19,10 +17,10 @@ namespace fem{
         	static auto constexpr BCT = boundary_condi_type::LEFT_NEUMANN;
 
 			// boundary conditions
-        	static auto constexpr D0 = 1.0; // left Dirichlet
-    		static auto constexpr D1 = 2.0; // right Direchlet
-			static auto constexpr N0 = 1.0; // left Neumann
-	    	static auto constexpr N1 = 1.5; // right Neumann
+        	static auto constexpr D0 = 0.0; // left Dirichlet
+    		static auto constexpr D1 = 1.0; // right Direchlet
+			static auto constexpr N0 = 0.0; // left Neumann
+	    	static auto constexpr N1 = 2.0; // right Neumann
 
 	    	static auto constexpr ELEMENT = 100;
         	static auto constexpr LENGTH = 1.0;
@@ -32,19 +30,14 @@ namespace fem{
     	private:
         	myvec bound_;
         	myvec diag_;
-			myvec f_;
 	    	myvec left_;
 	    	myvec right_;
+			myvec x_;
 
     	public:
         	FEM()
-            	: bound_(NODE, 0.0), diag_(NODE, 0.0),f_(NODE), left_(NODE, 0.0), right_(NODE, 0.0) 
-			{
-				for (auto && elem : f_){
-					elem = 1.0; // f = 1
-				}
-
-			}
+            	: bound_(NODE, 0.0), diag_(NODE, 0.0), left_(NODE, 0.0), right_(NODE, 0.0), x_(NODE, 1.0)
+			{}
 
         	~FEM() = default;
 
@@ -54,6 +47,9 @@ namespace fem{
 			// operator=()でもcopy禁止
         	FEM & operator=(FEM const &dummy) = delete;
 
+			// result output file
+			bool result_output();
+
 			// boundary condition
         	void boundary();
 
@@ -61,10 +57,7 @@ namespace fem{
 	    	void mat();;
 
 			// TDMA method
-	    	myvec tdma() const;
-
-			// result output file
-			bool output_file(myvec const &x);
+	    	void tdma();
     };
 }
 
@@ -73,9 +66,10 @@ int main(){
 
 	fem_obj.mat();
 	fem_obj.boundary();
-	auto const x = fem_obj.tdma();
+	fem_obj.tdma();
 
-	if (!fem_obj.output_file(x)){
+	// fem_obj.result_output();
+	if (!fem_obj.result_output()){
         std::cerr << "output file not open" << std::endl;
         return -1;
     }
@@ -84,42 +78,18 @@ int main(){
 }
 
 namespace fem{
-	bool FEM::output_file(myvec const &x){
+	bool FEM::result_output(){
 		std::ofstream ofs("data_Poisson.txt");
     	if (!ofs) {
         	return false;
     	}
 
-		auto const size = static_cast<int>(x.size());
-
-		for (auto i = 0; i < size; i++){
-			ofs << fem::FEM::DX * static_cast<double>(i) << " " << x[i] << std::endl;
+		for (auto i = 0; i < NODE; i++){
+			ofs << fem::FEM::DX * static_cast<double>(i) << " " << x_[i] << std::endl;
 		}
 
 		return true;
 	}
-
-	myvec FEM::tdma() const{
-		myvec p(NODE, 0.0);
-		myvec q(NODE, 0.0);
-
-		p[0] = -right_[0] / diag_[0];
-		q[0] = bound_[0] / diag_[0];
-
-		for (auto i = 1; i < NODE; i++){
-		    p[i] = -right_[i] / (diag_[i] + left_[i] * p[i - 1]);
-		    q[i] = (bound_[i] - left_[i] * q[i - 1]) / (diag_[i] + left_[i] * p[i - 1]);
-	    }
-
-		myvec x(NODE, 0.0);
-		x[NODE - 1] = q[NODE - 1];
-
-		for (auto j = NODE - 2; j >= 0; j--){
-			x[j] = p[j] * x[j + 1] + q[j];
-		}
-		
-        return x;
- 	}
 
     void FEM::boundary(){
 		switch (BCT){
@@ -137,7 +107,7 @@ namespace fem{
         	    diag_[NODE - 1] = 1.0;
 				left_[NODE - 1] = 0.0;
 				// boundary conditions
-			    bound_[0] -= N0 * DX; // left Neumann
+			    bound_[0] -= N0; // left Neumann
 				bound_[NODE - 1] = D1;
                 break;
 			
@@ -146,7 +116,7 @@ namespace fem{
         	    right_[0] = 0.0;
 				// boundary conditions
         	    bound_[0] = D0;
-			    bound_[NODE - 1] -= N1 * DX; // right Neumann
+			    bound_[NODE - 1] -= N1; // right Neumann
                 break;
             
             default:
@@ -158,14 +128,33 @@ namespace fem{
 	void FEM::mat(){
 	    for (auto i = 0; i < ELEMENT; i++){
 			//boundary
-		    bound_[i] += (2.0 * f_[i] + 1.0 * f_[i + 1]) * DX / 6.0;
-		    bound_[i + 1] += (1.0 * f_[i] + 2.0 * f_[i + 1]) * DX / 6.0;
+		    bound_[i] += (2.0 * x_[i] + 1.0 * x_[i + 1]) * DX / 6.0;
+		    bound_[i + 1] += (1.0 * x_[i] + 2.0 * x_[i + 1]) * DX / 6.0;
 
-			// diffusion
-		    diag_[i] += 1.0 / DX; 
+			// diffusion (DIFF = 1)
+		    diag_[i] += 1.0 / DX;
+			diag_[i + 1] += 1.0 / DX; 
             right_[i] -= 1.0 / DX;
-			diag_[i + 1] += 1.0 / DX;
 		    left_[i + 1] -= 1.0 / DX;
         }
 	}
+
+	void FEM::tdma(){
+		myvec p(NODE, 0.0);
+		myvec q(NODE, 0.0);
+
+		p[0] = -right_[0] / diag_[0];
+		q[0] = bound_[0] / diag_[0];
+
+		for (auto i = 1; i < NODE; i++){
+		    p[i] = -right_[i] / (diag_[i] + left_[i] * p[i - 1]);
+		    q[i] = (bound_[i] - left_[i] * q[i - 1]) / (diag_[i] + left_[i] * p[i - 1]);
+	    }
+
+		x_[NODE - 1] = q[NODE - 1];
+
+		for (auto i = NODE - 2; i >= 0; i--){
+			x_[i] = p[i] * x_[i + 1] + q[i];
+		}
+ 	}
 }
