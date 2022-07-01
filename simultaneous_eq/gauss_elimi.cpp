@@ -1,3 +1,5 @@
+// Gauss Elimination
+
 #include <cmath>    // for std::fabs, std::pow
 #include <iostream> // for std::cerr, std::cin, std::cout
 #include <optional> // for std::optional
