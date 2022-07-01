@@ -1,3 +1,5 @@
+// Gauss Seidel method
+
 #include <cassert>  // for assert
 #include <cmath>    // for std::fabs, std::pow, std::sqrt
 #include <iostream> // for std::cerr, std::cin, std::cout
