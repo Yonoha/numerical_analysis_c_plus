@@ -1,17 +1,20 @@
 #include <array>    // for std::array
 #include <cmath>    // for std::pow, std::sin
+#include <cstdio>   // for std::fclose, std::fopen, std::fprintf
 #include <fstream>  // for std::ofstream
 #include <iostream> // for std::endl
-#include <sstream>  // for std::string, std::stringstream
+#include <memory>   // for std::unique_ptr
+#include <utility>  // for std::move
 #include <vector>   // fos std::vector
 #include <boost/assert.hpp>                   // for BOOST_ASSERT
 #include <boost/format.hpp>                   // for boost::format
 #include <boost/math/constants/constants.hpp> // for boost::math::constants::pi
 
 namespace fem{
-	static auto const MYEPS = std::pow(10, -10);
+	static auto const MYEPS = std::pow(2, -10);
 
 	using myvec = std::vector<double>;
+	using namespace boost::math::constants;
 
     class FEM final{
 		private:
@@ -40,9 +43,9 @@ namespace fem{
             static auto constexpr TEND = 1.0;   // trange
     
     	public:
-			static auto constexpr TLOOP = 1000;
+			static auto constexpr TLOOP = 10000;
             static auto constexpr DT = TEND / TLOOP;
-    		static auto constexpr TREP = TLOOP / 10000;
+    		static auto constexpr TREP = 100;
 			static auto constexpr NODE = ELEMENT + 1;
 			static auto constexpr DX = LENGTH / ELEMENT;
 			static auto constexpr KAP = DIFF * DT / (DX * DX);
@@ -57,17 +60,18 @@ namespace fem{
 	    	myvec right1_;
 	    	myvec right2_;
 			myvec x_;
+			myvec xini_;
 			myvec xx_;
 
     	public:
         	FEM()
             	: bound_(NODE, 0.0), diag1_(NODE, 0.0), diag2_(NODE, 0.0), 
                   left1_(NODE, 0.0), left2_(NODE, 0.0), right1_(NODE, 0.0), right2_(NODE, 0.0), 
-				  x_(NODE, 0.0), xx_(NODE, 0.0)
+				  x_(NODE, 0.0), xini_(NODE, 0.0), xx_(NODE, 0.0)
         	{
 				for (auto i = 0; i < NODE; i++){
-					// initial x
-					x_[i] =std::sin(boost::math::constants::pi<double>() * static_cast<double>(i) * DX / LENGTH) ; 
+					// initial condition of x
+					xini_[i] =std::sin(pi<double>() * static_cast<double>(i) * DX) ; 
 				}
 			}
 
@@ -79,8 +83,8 @@ namespace fem{
 			// operator=()でもcopy禁止
         	FEM & operator=(FEM const &dummy) = delete;
 
-			// output for each TLOOP
-			bool result_output(int i);
+			// output for each TLOOP / TREP
+			bool result_output(int const t);
 
 			// boundary condition
         	void boundary();
@@ -97,6 +101,9 @@ namespace fem{
 
             // get private xx_
             myvec &getxx();
+
+            // get private xini_
+            myvec &getxini();
     };
 }
 
@@ -107,29 +114,34 @@ int main(){
 
     fem::FEM fem_obj;
 
-	fem_obj.result_output(0);
-
 	if (!fem_obj.result_output(0)){
 		std::cerr << "output file not open" << std::endl;
         return -1;
 	}
 
-	for (auto i = 1; i <= fem::FEM::TLOOP; i++){
+	for (auto t = 1; t <= fem::FEM::TLOOP; t++){
+		fem_obj.getx() = fem_obj.getxini();
+
         // Picard iteration
-        for (auto j = 0; j < fem::FEM::MAXLOOP; j++){
+        for (auto i = 0; i < fem::FEM::MAXLOOP; i++){
+			// make matrix
             fem_obj.mat();
+
+			// boundary condition
             fem_obj.boundary();
             fem_obj.boundary2();
+
+			// tdma method
 		    fem_obj.tdma();
 
         	auto max = 0.0;
 
-        	for (auto k = 0; k < fem::FEM::NODE; k++){
-            	if (max < std::fabs(fem_obj.getx()[k] < fem_obj.getxx()[k])){
-					max = std::fabs(fem_obj.getx()[k] - fem_obj.getxx()[k]);
+        	for (auto j = 0; j < fem::FEM::NODE; j++){
+            	if (max < std::fabs(fem_obj.getxini()[j] - fem_obj.getxx()[j])){
+					max = std::fabs(fem_obj.getxini()[j] - fem_obj.getxx()[j]);
 				}
 
-				fem_obj.getx()[k] = fem_obj.getxx()[k];				
+				fem_obj.getxini()[j] = fem_obj.getxx()[j];				
         	}
 
 			if (max < fem::MYEPS){
@@ -137,9 +149,8 @@ int main(){
 			}
     	}
 
-		if (!(i % 100)){
-			fem_obj.result_output(i);
-			if (!fem_obj.result_output(i)){
+		if (!(t % (fem::FEM::TLOOP / fem::FEM::TREP))){
+			if (!fem_obj.result_output(t)){
 				std::cerr << "output file not open" << std::endl;
         		return -1;
 			}
@@ -150,22 +161,17 @@ int main(){
 }
 
 namespace fem{
-	bool FEM::result_output(int i){
-		std::stringstream ss;
-		std::string name;
-		std::ofstream ofs;
+	bool FEM::result_output(int const t){
+		auto const filename = boost::format("data_burgers_%d.txt") % (static_cast<int>(t / (TLOOP / TREP)));
 
-		ss << i;
-		name = ss.str();
-		name = "data_burgers_" + name + ".txt";
-		
-		ofs.open(name.c_str());
-		if (!ofs){
+		std::unique_ptr<FILE, decltype(&std::fclose)> fp(std::fopen(filename.str().c_str(), "w"), std::fclose);
+
+		if (!fp){
 			return false;
 		}
 
-		for (auto j = 0; j < NODE; j++){
-			ofs << DX * static_cast<double>(j) << " " << x_[j] << std::endl;
+		for (auto i = 0; i < NODE; i++){
+			std::fprintf(fp.get(), "%.2f %.7f\n", static_cast<double>(i) * DX, xini_[i]);
 		}
 
 		return true;
@@ -173,6 +179,10 @@ namespace fem{
 
     myvec &FEM::getx(){
         return x_;
+    }
+
+    myvec &FEM::getxini(){
+        return xini_;
     }
 
     myvec &FEM::getxx(){
@@ -240,9 +250,9 @@ namespace fem{
 	}
 
 	void FEM::mat(){
-	    for (auto i = 0; i < ELEMENT; i++){
+	    for (auto i = 0; i < NODE - 1; i++){
 
-            auto VE = (x_[i] + x_[i + 1]) / 2.0;
+            auto VE = (xini_[i] + xini_[i + 1]) / 2.0;
 
             // temporal 1
             diag1_[i] += DX * 2.0 / 6.0 / DT;
@@ -275,10 +285,10 @@ namespace fem{
 			right2_[i] -= (1 - THETA) * VE / 2.0;
 
 			// diffusion 2
-		    diag2_[i] -= (1.0 - THETA) * DIFF / DX;
+		    diag2_[i] += (1.0 - THETA) * DIFF / DX;
 			diag2_[i + 1] -= (1.0 - THETA) * DIFF / DX;
 		    left2_[i + 1] += (1.0 - THETA) * DIFF / DX; 
-            right2_[i] += (1.0 - THETA) * DIFF / DX;
+            right2_[i] -= (1.0 - THETA) * DIFF / DX;
         }
 	}
 
