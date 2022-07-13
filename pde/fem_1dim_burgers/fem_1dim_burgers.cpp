@@ -1,20 +1,17 @@
 #include <array>    // for std::array
 #include <cmath>    // for std::pow, std::sin
 #include <cstdio>   // for std::fclose, std::fopen, std::fprintf
-#include <fstream>  // for std::ofstream
 #include <iostream> // for std::endl
 #include <memory>   // for std::unique_ptr
-#include <utility>  // for std::move
 #include <vector>   // fos std::vector
 #include <boost/assert.hpp>                   // for BOOST_ASSERT
 #include <boost/format.hpp>                   // for boost::format
 #include <boost/math/constants/constants.hpp> // for boost::math::constants::pi
 
 namespace fem{
-	static auto const MYEPS = std::pow(2, -10);
+	static auto const MYEPS = std::pow(10, -10);
 
 	using myvec = std::vector<double>;
-	using namespace boost::math::constants;
 
     class FEM final{
 		private:
@@ -35,7 +32,8 @@ namespace fem{
 
             // coefficient
             static auto constexpr DIFF = 0.01; // diffusion 
-            static auto constexpr THETA = 0.5; // theta method
+            static auto constexpr THETA = 1.0; // theta method
+			// 0.0や0.5だとうまくいかないが, 理由は不明
 
             // for discrete of x and t
  	    	static auto constexpr ELEMENT = 100; // mesh number
@@ -70,8 +68,8 @@ namespace fem{
 				  x_(NODE, 0.0), xini_(NODE, 0.0), xx_(NODE, 0.0)
         	{
 				for (auto i = 0; i < NODE; i++){
-					// initial condition of x
-					xini_[i] =std::sin(pi<double>() * static_cast<double>(i) * DX) ; 
+					// initial x
+					xini_[i] =std::sin(boost::math::constants::pi<double>() * static_cast<double>(i) * DX / LENGTH) ; 
 				}
 			}
 
@@ -83,7 +81,7 @@ namespace fem{
 			// operator=()でもcopy禁止
         	FEM & operator=(FEM const &dummy) = delete;
 
-			// output for each TLOOP / TREP
+			// output for each TLOOP
 			bool result_output(int const t);
 
 			// boundary condition
@@ -99,11 +97,12 @@ namespace fem{
             // get private x_
             myvec &getx();
 
-            // get private xx_
-            myvec &getxx();
-
             // get private xini_
             myvec &getxini();
+
+            // get private xx_
+            const myvec &getxx() const;
+
     };
 }
 
@@ -120,18 +119,14 @@ int main(){
 	}
 
 	for (auto t = 1; t <= fem::FEM::TLOOP; t++){
+		// preserve xini_
 		fem_obj.getx() = fem_obj.getxini();
 
         // Picard iteration
         for (auto i = 0; i < fem::FEM::MAXLOOP; i++){
-			// make matrix
             fem_obj.mat();
-
-			// boundary condition
             fem_obj.boundary();
             fem_obj.boundary2();
-
-			// tdma method
 		    fem_obj.tdma();
 
         	auto max = 0.0;
@@ -162,7 +157,7 @@ int main(){
 
 namespace fem{
 	bool FEM::result_output(int const t){
-		auto const filename = boost::format("data_burgers_%d.txt") % (static_cast<int>(t / (TLOOP / TREP)));
+		auto const filename = boost::format("data_fem_1dim_burgers_%d.txt") % (static_cast<int>(t / (TLOOP / TREP)));
 
 		std::unique_ptr<FILE, decltype(&std::fclose)> fp(std::fopen(filename.str().c_str(), "w"), std::fclose);
 
@@ -173,6 +168,7 @@ namespace fem{
 		for (auto i = 0; i < NODE; i++){
 			std::fprintf(fp.get(), "%.2f %.7f\n", static_cast<double>(i) * DX, xini_[i]);
 		}
+		// std::fprintf(fp.get(), "\n"); // for 'set pm3d' in gnuplot
 
 		return true;
 	}
@@ -185,7 +181,7 @@ namespace fem{
         return xini_;
     }
 
-    myvec &FEM::getxx(){
+    const myvec &FEM::getxx() const{
         return xx_;
     }
 
