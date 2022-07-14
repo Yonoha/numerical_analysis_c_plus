@@ -38,7 +38,7 @@ int main(){
     boost::numeric::odeint::adams_bashforth_moulton<6, state> Stepper;
 
     // open output file
-    std::ofstream ofs("data_Lotka_Volterra.txt");
+    std::ofstream ofs("data_boost_odeint_2dim_lotka_volterra.txt");
 
     if (!ofs){
         std::cerr << "output file not open" << std::endl;
