@@ -1,4 +1,3 @@
-#include <array>    // for std::array
 #include <cmath>    // for std::pow, std::sin
 #include <cstdio>   // for std::fclose, std::fopen, std::fprintf
 #include <iostream> // for std::endl
@@ -7,11 +6,13 @@
 #include <boost/assert.hpp>                   // for BOOST_ASSERT
 #include <boost/format.hpp>                   // for boost::format
 #include <boost/math/constants/constants.hpp> // for boost::math::constants::pi
+#include <boost/range/algorithm.hpp>		  // for boost::fill
 
 namespace fem{
-	static auto const MYEPS = std::pow(10, -10);
+	static auto const MYEPS = std::pow(2, -50);
 
 	using myvec = std::vector<double>;
+	using namespace boost::math::constants;
 
     class FEM final{
 		private:
@@ -32,18 +33,17 @@ namespace fem{
 
             // coefficient
             static auto constexpr DIFF = 0.01; // diffusion 
-            static auto constexpr THETA = 1.0; // theta method
-			// 0.0や0.5だとうまくいかないが, 理由は不明
+            static auto constexpr THETA = 0.5; // theta method
 
             // for discrete of x and t
  	    	static auto constexpr ELEMENT = 100; // mesh number
         	static auto constexpr LENGTH = 1.0;  // xrange
-            static auto constexpr TEND = 1.0;   // trange
+            static auto constexpr TEND = 1.0;    // trange
     
     	public:
 			static auto constexpr TLOOP = 10000;
             static auto constexpr DT = TEND / TLOOP;
-    		static auto constexpr TREP = 100;
+    		static auto constexpr TREP = 100; // TLOOP / TREPごとにoutputするのでTLOOP > 1000(0)以上が良い
 			static auto constexpr NODE = ELEMENT + 1;
 			static auto constexpr DX = LENGTH / ELEMENT;
 			static auto constexpr KAP = DIFF * DT / (DX * DX);
@@ -58,18 +58,18 @@ namespace fem{
 	    	myvec right1_;
 	    	myvec right2_;
 			myvec x_;
-			myvec xini_;
+			myvec xr_;
 			myvec xx_;
 
     	public:
         	FEM()
             	: bound_(NODE, 0.0), diag1_(NODE, 0.0), diag2_(NODE, 0.0), 
                   left1_(NODE, 0.0), left2_(NODE, 0.0), right1_(NODE, 0.0), right2_(NODE, 0.0), 
-				  x_(NODE, 0.0), xini_(NODE, 0.0), xx_(NODE, 0.0)
+				  x_(NODE, 0.0), xr_(NODE, 0.0), xx_(NODE, 0.0)
         	{
 				for (auto i = 0; i < NODE; i++){
-					// initial x
-					xini_[i] =std::sin(boost::math::constants::pi<double>() * static_cast<double>(i) * DX / LENGTH) ; 
+					// initial condition of x
+					x_[i] = std::sin(pi<double>() * static_cast<double>(i) * DX) ; 
 				}
 			}
 
@@ -81,8 +81,17 @@ namespace fem{
 			// operator=()でもcopy禁止
         	FEM & operator=(FEM const &dummy) = delete;
 
-			// output for each TLOOP
+			// Picard iteration
+			bool picard();
+
+			// output for each TLOOP / TREP
 			bool result_output(int const t);
+
+            // get private x_
+            myvec const &getx() const;
+
+            // get private xr_
+            myvec &getxr();
 
 			// boundary condition
         	void boundary();
@@ -93,16 +102,6 @@ namespace fem{
 
 			// make stiffness matrix
 	    	void mat();
-
-            // get private x_
-            myvec &getx();
-
-            // get private xini_
-            myvec &getxini();
-
-            // get private xx_
-            const myvec &getxx() const;
-
     };
 }
 
@@ -119,27 +118,20 @@ int main(){
 	}
 
 	for (auto t = 1; t <= fem::FEM::TLOOP; t++){
-		// preserve xini_
-		fem_obj.getx() = fem_obj.getxini();
+		fem_obj.getxr() = fem_obj.getx();
 
-        // Picard iteration
         for (auto i = 0; i < fem::FEM::MAXLOOP; i++){
+			// make matrix
             fem_obj.mat();
+
+			// boundary condition
             fem_obj.boundary();
-            fem_obj.boundary2();
+			fem_obj.boundary2();
+
+			// tdma method
 		    fem_obj.tdma();
 
-        	auto max = 0.0;
-
-        	for (auto j = 0; j < fem::FEM::NODE; j++){
-            	if (max < std::fabs(fem_obj.getxini()[j] - fem_obj.getxx()[j])){
-					max = std::fabs(fem_obj.getxini()[j] - fem_obj.getxx()[j]);
-				}
-
-				fem_obj.getxini()[j] = fem_obj.getxx()[j];				
-        	}
-
-			if (max < fem::MYEPS){
+			if (fem_obj.picard()){
 				break;
 			}
     	}
@@ -156,8 +148,26 @@ int main(){
 }
 
 namespace fem{
+	bool FEM::picard(){
+        auto max = 0.0;
+
+        for (auto i = 0; i < NODE; i++){
+            if (max < std::fabs(x_[i] - xx_[i])){
+				max = std::fabs(x_[i] - xx_[i]);
+			}
+
+			x_[i] = xx_[i];				
+        }
+
+		if (max < MYEPS){
+			return true;
+		}
+
+		return false;
+	}
+
 	bool FEM::result_output(int const t){
-		auto const filename = boost::format("data_fem_1dim_burgers_%d.txt") % (static_cast<int>(t / (TLOOP / TREP)));
+		auto const filename = boost::format("data_fem_1dim_burgers_%d.txt") % (t / (TLOOP / TREP));
 
 		std::unique_ptr<FILE, decltype(&std::fclose)> fp(std::fopen(filename.str().c_str(), "w"), std::fclose);
 
@@ -166,23 +176,18 @@ namespace fem{
 		}
 
 		for (auto i = 0; i < NODE; i++){
-			std::fprintf(fp.get(), "%.2f %.7f\n", static_cast<double>(i) * DX, xini_[i]);
+			std::fprintf(fp.get(), "%.2f %.7f\n", static_cast<double>(i) * DX, x_[i]);
 		}
-		// std::fprintf(fp.get(), "\n"); // for 'set pm3d' in gnuplot
 
 		return true;
 	}
 
-    myvec &FEM::getx(){
+    myvec const &FEM::getx() const{
         return x_;
     }
 
-    myvec &FEM::getxini(){
-        return xini_;
-    }
-
-    const myvec &FEM::getxx() const{
-        return xx_;
+    myvec &FEM::getxr() {
+        return xr_;
     }
 
     void FEM::boundary(){
@@ -226,13 +231,13 @@ namespace fem{
                 break;
 		
             case boundary_condi_type::LEFT_NEUMANN:
-                bound_[0] = diag2_[0] * x_[0] + right2_[0] * x_[1] - N0 * DIFF;
+                bound_[0] = diag2_[0] * xr_[0] + right2_[0] * xr_[1] - N0 * DIFF;
 				bound_[NODE - 1] = D1;
                 break;
 			
             case boundary_condi_type::RIGHT_NEUMANN:
                 bound_[0] = D0;  
-				bound_[NODE - 1] = left2_[NODE - 1] * x_[NODE - 2] + left2_[NODE - 1] * x_[NODE - 1] + N1 * DIFF;
+				bound_[NODE - 1] = left2_[NODE - 1] * xr_[NODE - 2] + left2_[NODE - 1] * xr_[NODE - 1] + N1 * DIFF;
                 break;
             
             default:
@@ -241,20 +246,32 @@ namespace fem{
         }
 
 		for (auto i = 1; i < NODE - 1; i++){
-            bound_[i] = left2_[i] * x_[i - 1] + diag2_[i] * x_[i] + right2_[i] * x_[i + 1];
+            bound_[i] = left2_[i] * xr_[i - 1] + diag2_[i] * xr_[i] + right2_[i] * xr_[i + 1];
         }
 	}
 
 	void FEM::mat(){
-	    for (auto i = 0; i < NODE - 1; i++){
+		boost::fill(diag1_, 0.0);
+		boost::fill(left1_, 0.0);
+		boost::fill(right1_, 0.0);
+		boost::fill(diag2_, 0.0);
+		boost::fill(left2_, 0.0);
+		boost::fill(right2_, 0.0);
 
-            auto VE = (xini_[i] + xini_[i + 1]) / 2.0;
+		for (auto i = 0; i < NODE - 1; i++) {
+			auto const VE = (x_[i] + x_[i + 1]) / 2.0;
 
-            // temporal 1
-            diag1_[i] += DX * 2.0 / 6.0 / DT;
-            diag1_[i + 1] += DX * 2.0 / 6.0 / DT;
-            left1_[i + 1] += DX * 1.0 / 6.0 / DT;
-            right1_[i] += DX * 1.0 / 6.0 / DT;
+			// temporal 1
+			diag1_[i] += DX * 2.0 / 6.0 / DT;
+			diag1_[i + 1] += DX * 2.0 / 6.0 / DT;
+			left1_[i + 1] += DX * 1.0 / 6.0 / DT;
+			right1_[i] += DX * 1.0 / 6.0 / DT;
+
+			// diffusion 1
+			diag1_[i] += THETA * DIFF / DX;
+			diag1_[i + 1] += THETA * DIFF / DX;
+			left1_[i + 1] -= THETA * DIFF / DX;
+			right1_[i] -= THETA * DIFF / DX;
 
 			//advection 1
 			diag1_[i] -= THETA * VE / 2.0;
@@ -262,29 +279,23 @@ namespace fem{
 			left1_[i + 1] -= THETA * VE / 2.0;
 			right1_[i] += THETA * VE / 2.0;
 
-			// diffusion 1
-		    diag1_[i] += THETA * DIFF / DX;
-            diag1_[i + 1] += THETA * DIFF / DX; 
-		    left1_[i + 1] -= THETA * DIFF / DX;
-            right1_[i] -= THETA * DIFF / DX;
-
-            // temporal 2
-            diag2_[i] += DX * 2.0 / 6.0 / DT;
-            diag2_[i + 1] += DX * 2.0 / 6.0 / DT;
-            left2_[i + 1] += DX * 1.0 / 6.0 / DT;
-            right2_[i] += DX * 1.0 / 6.0 / DT;
-
-			//advection 2
-			diag2_[i] += (1 - THETA) * VE / 2.0;
-			diag2_[i + 1] -= (1 - THETA) * VE / 2.0;
-			left2_[i + 1] += (1 - THETA) * VE / 2.0;
-			right2_[i] -= (1 - THETA) * VE / 2.0;
+			// temporal 2
+			diag2_[i] += DX * 2.0 / 6.0 / DT;
+			diag2_[i + 1] += DX * 2.0 / 6.0 / DT;
+			left2_[i + 1] += DX * 1.0 / 6.0 / DT;
+			right2_[i] += DX * 1.0 / 6.0 / DT;
 
 			// diffusion 2
-		    diag2_[i] += (1.0 - THETA) * DIFF / DX;
+			diag2_[i] -= (1.0 - THETA) * DIFF / DX;
 			diag2_[i + 1] -= (1.0 - THETA) * DIFF / DX;
-		    left2_[i + 1] += (1.0 - THETA) * DIFF / DX; 
-            right2_[i] -= (1.0 - THETA) * DIFF / DX;
+			left2_[i + 1] += (1.0 - THETA) * DIFF / DX;
+			right2_[i] += (1.0 - THETA) * DIFF / DX;
+
+			//advection 2
+			diag2_[i] += (1.0 - THETA) * VE / 2.0;
+			diag2_[i + 1] -= (1.0 - THETA) * VE / 2.0;
+			left2_[i + 1] += (1.0 - THETA) * VE / 2.0;
+			right2_[i] -= (1.0 - THETA) * VE / 2.0;
         }
 	}
 
