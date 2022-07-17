@@ -237,7 +237,7 @@ namespace fem{
 			
             case boundary_condi_type::RIGHT_NEUMANN:
                 bound_[0] = D0;  
-				bound_[NODE - 1] = left2_[NODE - 1] * xr_[NODE - 2] + left2_[NODE - 1] * xr_[NODE - 1] + N1 * DIFF;
+				bound_[NODE - 1] = left2_[NODE - 1] * xr_[NODE - 2] + diag2_[NODE - 1] * xr_[NODE - 1] + N1 * DIFF;
                 break;
             
             default:
