@@ -13,8 +13,9 @@
 #include <boost/multi_array.hpp>              // for boost::multi_array
 
 namespace{
-    using myvec = std::vector<double>;
+    using mypair = std::tuple<int, int>;
     using my2darray = boost::multi_array<double, 2>;
+    using myvec = std::vector<double>;
 
     // boundary condition
     enum class boundary_conditon_type{
@@ -27,7 +28,7 @@ namespace{
 
     static auto constexpr TEND = 1.0;
     static auto constexpr TREP = 100;
-    static auto constexpr TLOOP = 10000; // TREP loopごとにgifにするのでTLOOP > 10 * TREP程度が良い
+    static auto constexpr TLOOP = 10000; // (TLOOP / TREP) loopごとにgifにするのでTLOOP > 10 * TREP程度が良い
     static auto constexpr DT = TEND / TLOOP;
 
     static auto constexpr XRANGE = 1.0;
@@ -40,30 +41,36 @@ namespace{
     static auto constexpr YNODE = YMESH + 1;
     static auto constexpr DY = YRANGE / YMESH;
 
-    static auto constexpr XADVEC = 0.5; // x direction advection number
-    static auto constexpr YADVEC = 1.0; // y direction advection number
-    static auto constexpr XCAURANT = XADVEC * DT / DX;
-    static auto constexpr YCAURANT = YADVEC * DT / DY;
-    static auto constexpr ADVEC = XCAURANT + YCAURANT;
+    static auto constexpr XADVEC = 1.0; // x direction advection number
+    static auto constexpr YADVEC = -1.0; // y direction advection number
+    static auto constexpr XCOURANT = XADVEC * DT / DX;
+    static auto constexpr YCOURANT = YADVEC * DT / DY;
+    static auto constexpr COURANT = XCOURANT + YCOURANT;
 
     // output result for each i
-    bool result_output(int const i, my2darray const &u0);
+    bool result_output(int const t, my2darray const &u0);
+
+    // initial condition of u(x, y, t)
+    my2darray uinitial(myvec const &x, myvec const &y);
+
+    // make down and up value of x[i] for upwind
+    mypair make_param_du(int const j);
+
+    // make left and right value of x[i] for upwind
+    mypair make_param_lr(int const i);
 
     // discrezation of x and y
     myvec xdiscrete();
     myvec ydiscrete();
 
-    // initial condition of u(x, y, t)
-    my2darray uinitial(myvec const &x, myvec const &y);
-
-    // center differential method
-    void center_diffe(my2darray &u0);
+    // 1st accuracy upwind differnece method
+    void upwind_diffe(my2darray &u0);
 }
 
 int main(){
-    // ADVEC > 0.5のとき強制終了 
-    // CLT条件より, ADVEC <= 1.0でないと正しい結果が得られない
-    BOOST_ASSERT(0.0 <= ADVEC && ADVEC <= 1.0); 
+    // std::fabs(COURANT) > 1.0のとき強制終了 
+    // CFL条件より, std::fabs(COURANT) <= 1.0でないと正しい結果が得られない
+    BOOST_ASSERT(std::fabs(COURANT) <= 1.0);
 
     auto x = xdiscrete();
     auto y = ydiscrete();
@@ -77,7 +84,7 @@ int main(){
     }
 
     for (auto t = 1; t <= TLOOP; t++){
-        center_diffe(u0);
+        upwind_diffe(u0);
 
         if (!(t % (TLOOP / TREP))){
             if (!result_output(t, u0)){
@@ -91,8 +98,8 @@ int main(){
 }
 
 namespace{
-    bool result_output(int const i, my2darray const &u0){
-		auto const filename = boost::format("data_fdm_2dim_nonste_advec_%d.txt") % (static_cast<int>(i / (TLOOP / TREP)));
+    bool result_output(int const t, my2darray const &u0){
+		auto const filename = boost::format("data_fdm_2dim_nonste_advec_%d.txt") % (static_cast<int>(t / (TLOOP / TREP)));
 		
         std::unique_ptr<FILE, decltype(&std::fclose)> fp(std::fopen(filename.str().c_str(), "w"), std::fclose);
         if (!fp){
@@ -124,6 +131,38 @@ namespace{
         return u0;
     }
 
+    mypair make_param_du(int const j){
+        auto down = j - 1;
+        auto up = j + 1;
+
+        // periodic condition
+        if (j == 0){
+            down = YMESH;
+        }
+
+        else if (j == YMESH){
+            up = 0;
+        } 
+
+        return std::make_pair(down, up);
+    }
+
+    mypair make_param_lr(int const i){
+        auto left = i - 1;
+        auto right = i + 1;
+
+        // periodic condition
+        if (i == 0){
+            left = XMESH;
+        }
+
+        else if (i == XMESH){
+            right = 0;
+        } 
+
+        return std::make_pair(left, right);
+    }
+
     myvec xdiscrete(){
         myvec x(XNODE, 0.0);
 
@@ -146,72 +185,40 @@ namespace{
         return y;
     }
 
-    void center_diffe(my2darray &u0){
+    void upwind_diffe(my2darray &u0){
         my2darray u(boost::extents[XNODE][YNODE]);
+        my2darray xdiff(boost::extents[XNODE][YNODE]);
+        my2darray ydiff(boost::extents[XNODE][YNODE]);
 
         switch (BCT){
             case boundary_conditon_type::DIRICLET:
-                // y = 0
-                for (auto i = 0; i <= XMESH; i++){
-                    u[i][0] = 0.0;
-                }
-
-                // y = YRANGE
-                for (auto i = 0; i <= XMESH; i++){
-                    u[i][YMESH] = 0.0;
-                }
-
-                // x = 0
-                for (auto i = 1; i < YMESH; i++){
-                    u[0][i] = 0.0;
-                }
-
-                // x = XRANGE
-                for (auto i = 1; i < YMESH; i++){
-                    u[XMESH][i] = 0.0;
-                }
                 break;
 
             case boundary_conditon_type::LEFT_NEUMANN:
+                break;
 
             case boundary_conditon_type::RIGHT_NEUMANN:
+                break;
 
             case boundary_conditon_type::PERIODIC:
-                // y = 0
-                u[0][0] = u0[0][0] - XCAURANT * (u0[0][0] - u0[XMESH][0]) - YCAURANT * (u0[0][0] - u0[0][YMESH]);
+                for (auto i = 0; i <= XMESH; i++){
+                    for (auto j = 0; j <= YMESH; j++){
+                        auto const [left, right] = make_param_lr(i);
+                        auto const [down, up] = make_param_du(j);
 
-                for (auto i = 1; i <= XMESH; i++){
-                    u[i][0] = u0[i][0] - XCAURANT * (u0[i][0] - u0[i - 1][0]) - YCAURANT * (u0[i][0] - u0[i][YMESH]);
-                }
+                        // 1st accuracy upwind difference method
+                        xdiff[i][j] = ((XCOURANT + std::fabs(XCOURANT)) / 2.0) * (u0[i][j] - u0[left][j]) + ((XCOURANT - std::fabs(XCOURANT)) / 2.0) * (-u0[i][j] + u0[right][j]);
 
-                // y = YRANGE
-                u[0][YMESH] = u0[0][YMESH] - XCAURANT * (u0[0][YMESH] - u0[XMESH][YMESH]) - YCAURANT * (u0[0][YMESH] - u0[0][YMESH - 1]);
+                        ydiff[i][j] = ((YCOURANT + std::fabs(YCOURANT)) / 2.0) * (u0[i][j] - u0[i][down]) + ((YCOURANT - std::fabs(YCOURANT)) / 2.0) * (-u0[i][j] + u0[i][up]);
 
-                for (auto i = 1; i <= XMESH; i++){
-                    u[i][YMESH] = u0[i][YMESH] - XCAURANT * (u0[i][YMESH] - u0[i - 1][YMESH]) - YCAURANT * (u0[i][YMESH] - u0[i][YMESH - 1]);
-                }
-
-                // x = 0
-                for (auto i = 1; i < YMESH; i++){
-                    u[0][i] = u0[0][i] - XCAURANT * (u0[0][i] - u0[XMESH][i]) - YCAURANT * (u0[0][i] - u0[0][i - 1]);
-                }
-
-                // x = XRANGE
-                for (auto i = 1; i < YMESH; i++){
-                    u[XMESH][i] = u0[XMESH][i] - XCAURANT * (u0[XMESH][i] - u0[XMESH - 1][i]) - YCAURANT * (u0[XMESH][i] - u0[XMESH][i - 1]);
+                        u[i][j] = u0[i][j] - xdiff[i][j] - ydiff[i][j];
+                    }
                 }
                 break;
 
             default:
                 BOOST_ASSERT(!"boundary_conditon_type is abnormal value");
                 break;
-        }
-        
-        // center differential method
-        for (auto i = 1; i < XMESH; i++){
-            for (auto j = 1; j < YMESH; j++){
-                u[i][j] = u0[i][j] - XCAURANT * (u0[i][j] - u0[i - 1][j]) - YCAURANT * (u0[i][j] - u0[i][j - 1]);
-            }
         }
         
         // update value of u
